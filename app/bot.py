@@ -5,8 +5,8 @@ from .strategies import process_result
 from .telegram_send import send
 
 _last_status = None
-_last_result_id = None  # evita processar o mesmo resultado duas vezes
-_signal_sent = False    # controla se já mandou sinal nessa rodada
+_last_result_id = None
+_signal_sent = False  # controla envio por rodada
 
 
 def run():
@@ -18,7 +18,7 @@ def run():
 
     while True:
         try:
-            # STATUS DA MESA
+            # Verifica status da mesa
             status = collector.get_table_status()
 
             if status != _last_status:
@@ -29,23 +29,23 @@ def run():
                 )
                 _last_status = status
 
-                # Reset do controle de sinal quando a rodada fecha
+                # Reset do controle de sinal ao fechar rodada
                 if status == "CLOSED":
                     _signal_sent = False
 
-            # RESULTADOS
+            # Se mesa estiver aberta, analisa resultado
             if status == "OPEN":
                 result = collector.get_last_result()
 
                 if result and result.get("id") != _last_result_id:
                     messages = process_result(result) or []
 
-                    # Só envia se houver estratégia comprovada
+                    # Só envia se houver estratégia comprovada e ainda não enviou nessa rodada
                     if messages and not _signal_sent:
                         for msg in messages:
                             send(msg)
 
-                        _signal_sent = True  # marca que já mandou sinal nessa rodada
+                        _signal_sent = True
                         _last_result_id = result.get("id")
 
             time.sleep(POLL_INTERVAL)
