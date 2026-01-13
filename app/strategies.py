@@ -7,6 +7,7 @@ history = []
 current_entry = None
 current_gale = 0
 current_strategy = None
+signal_active = False  # controla se já existe sinal em andamento
 
 STRATEGY_LABELS = {
     "ZIG-ZAG": "🔁 ZIG-ZAG",
@@ -35,14 +36,12 @@ def zig_zag():
         return history[-1], "ZIG-ZAG"
     return None
 
-
 def tendencia():
     if len(history) < 3:
         return None
     if history[-1] == history[-2] == history[-3]:
         return history[-1], "TENDÊNCIA"
     return None
-
 
 def reversao():
     if len(history) < 2:
@@ -52,14 +51,12 @@ def reversao():
         return entrada, "REVERSÃO"
     return None
 
-
 def quebra_tendencia():
     if len(history) < 4:
         return None
     if history[-4] == history[-3] == history[-2] and history[-1] != history[-2]:
         return history[-1], "QUEBRA DE TENDÊNCIA"
     return None
-
 
 def consolidacao():
     if len(history) < 4:
@@ -73,13 +70,7 @@ def consolidacao():
 # MOTOR DE DECISÃO
 # =====================
 def check_strategies():
-    for strat in (
-        zig_zag,
-        tendencia,
-        reversao,
-        quebra_tendencia,
-        consolidacao,
-    ):
+    for strat in (zig_zag, tendencia, reversao, quebra_tendencia, consolidacao):
         result = strat()
         if result:
             return result
@@ -89,7 +80,7 @@ def check_strategies():
 # PROCESSAMENTO PRINCIPAL
 # =====================
 def process_result(result):
-    global current_entry, current_gale, current_strategy
+    global current_entry, current_gale, current_strategy, signal_active
 
     messages = []
     add_history(result)
@@ -99,13 +90,14 @@ def process_result(result):
     # =====================
     # NOVO SINAL
     # =====================
-    if current_entry is None:
+    if not signal_active:
         decision = check_strategies()
         if not decision:
             return messages
 
         current_entry, current_strategy = decision
         current_gale = 0
+        signal_active = True
         strategy_name = STRATEGY_LABELS.get(current_strategy, current_strategy)
 
         messages.append(
@@ -133,9 +125,11 @@ Resultado: {result['color']}{result['value']}
 Confiança: {CONFIDENCE}%
 """
         )
+        # reset
         current_entry = None
         current_gale = 0
         current_strategy = None
+        signal_active = False
         return messages
 
     # =====================
@@ -164,7 +158,10 @@ Resultado: {result['color']}{result['value']}
 """
     )
 
+    # reset
     current_entry = None
     current_gale = 0
     current_strategy = None
+    signal_active = False
     return messages
+
