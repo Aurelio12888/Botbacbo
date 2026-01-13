@@ -22,15 +22,13 @@ class BantoBetCollector:
         self.last_result_id = None
 
     def get_table_status(self):
-        """Detecta OPEN/CLOSED só com requests + regex"""
+        """Detecta OPEN/CLOSED com base em palavras-chave"""
         try:
             response = self.session.get(self.url, timeout=12)
             text = response.text.lower()
 
-            # Keywords OPEN (apostas ativas)
             if re.search(r'aposta|bet|timer|tempo|00:|segundos|\d{2}:\d{2}', text):
                 return "OPEN"
-            # Keywords CLOSED (resultado)
             elif re.search(r'resultado|ganhador|winner|pago|parabéns', text):
                 return "CLOSED"
             else:
@@ -41,48 +39,30 @@ class BantoBetCollector:
             return "ERROR"
 
     def get_last_result(self):
-        """Extrai resultado com regex puro"""
+        """Extrai último resultado do Bac Bo com regex mais específico"""
         try:
             response = self.session.get(self.url, timeout=12)
             text = response.text
 
-            # Regex otimizado pro Bac Bo Banto Bet
-            patterns = [
-                r'([🔴🔵]?)(\d{1,2})[S\-/](\d{1,2})',  # 🔴12S9 ou 12-9
-                r'([🔴🔵]?)(\d+)(\s*[-/S]\s*)(\d+)',    # 🔴 12 - 9
-                r'([🔴🔵])\s*(\d{1,2})\s*[-/S]\s*(\d{1,2})'  # 🔴 12 S 9
-            ]
+            # Regex ajustado para capturar resultados em spans ou blocos
+            match = re.findall(r'class="result (red|blue)">(\d+)<', text)
+            if match and len(match) >= 2:
+                color_map = {"red": "🔴", "blue": "🔵"}
+                # pega os dois últimos números (dados)
+                dice1 = int(match[-2][1])
+                dice2 = int(match[-1][1])
+                color = color_map.get(match[-1][0], "🔴")
+                value = dice1 + dice2
 
-            for pattern in patterns:
-                matches = re.findall(pattern, text)
-                if matches:
-                    for match in reversed(matches):  # Último resultado
-                        color, dice1, sep, dice2 = match if len(match) == 4 else (*match, '')
-                        try:
-                            value = int(dice1) + int(dice2)
-                            if 4 <= value <= 17:  # Bac Bo válido
-                                color = color if color else "🔴"
-                                timestamp = int(time.time())
-
-                                # ID único anti-duplicata
-                                result_id = hashlib.md5(
-                                    f"{color}_{value}_{timestamp}".encode()
-                                ).hexdigest()[:8]
-
-                                result = {
-                                    "id": result_id,
-                                    "color": color,
-                                    "value": value,
-                                    "timestamp": timestamp
-                                }
-
-                                # Evita duplicatas
-                                if result_id != self.last_result_id:
-                                    self.last_result_id = result_id
-                                    return result
-                        except (ValueError, IndexError):
-                            continue
-
+                result_id = hashlib.md5(f"{color}_{value}".encode()).hexdigest()[:8]
+                if result_id != self.last_result_id:
+                    self.last_result_id = result_id
+                    return {
+                        "id": result_id,
+                        "color": color,
+                        "value": value,
+                        "timestamp": int(time.time())
+                    }
             return None
 
         except Exception as e:
