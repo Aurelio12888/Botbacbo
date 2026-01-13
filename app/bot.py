@@ -6,11 +6,10 @@ from .telegram_send import send
 
 _last_status = None
 _last_result_id = None
-_signal_sent = False  # controla envio por rodada
 
 
 def run():
-    global _last_status, _last_result_id, _signal_sent
+    global _last_status, _last_result_id
 
     send("🤖 Bot iniciado com sucesso")
 
@@ -29,24 +28,17 @@ def run():
                 )
                 _last_status = status
 
-                # Reset do controle de sinal ao fechar rodada
-                if status == "CLOSED":
-                    _signal_sent = False
-
             # Se mesa estiver aberta, analisa resultado
             if status == "OPEN":
                 result = collector.get_last_result()
 
                 if result and result.get("id") != _last_result_id:
+                    # Processa resultado e envia todas as mensagens (sinal, win, gale, loss)
                     messages = process_result(result) or []
+                    for msg in messages:
+                        send(msg)
 
-                    # Só envia se houver estratégia comprovada e ainda não enviou nessa rodada
-                    if messages and not _signal_sent:
-                        for msg in messages:
-                            send(msg)
-
-                        _signal_sent = True
-                        _last_result_id = result.get("id")
+                    _last_result_id = result.get("id")
 
             time.sleep(POLL_INTERVAL)
 
