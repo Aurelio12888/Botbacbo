@@ -33,10 +33,11 @@ def run():
                 result = collector.get_last_result()
 
                 if result and result.get("id") != _last_result_id:
-                    # Processa resultado e envia todas as mensagens (sinal, win, gale, loss)
+                    # Processa resultado e só envia se houver mensagens relevantes
                     messages = process_result(result) or []
-                    for msg in messages:
-                        send(msg)
+                    if messages:
+                        for msg in messages:
+                            send(msg)
 
                     _last_result_id = result.get("id")
 
