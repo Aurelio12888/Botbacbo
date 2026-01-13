@@ -7,7 +7,8 @@ history = []
 current_entry = None
 current_gale = 0
 current_strategy = None
-signal_active = False  # controla se já existe sinal em andamento
+signal_active = False
+last_strategy_used = None  # evita repetir a mesma estratégia em sequência
 
 STRATEGY_LABELS = {
     "ZIG-ZAG": "🔁 ZIG-ZAG",
@@ -37,9 +38,10 @@ def zig_zag():
     return None
 
 def tendencia():
-    if len(history) < 3:
+    # Tornar mais exigente: precisa de 4 iguais seguidos
+    if len(history) < 4:
         return None
-    if history[-1] == history[-2] == history[-3]:
+    if history[-1] == history[-2] == history[-3] == history[-4]:
         return history[-1], "TENDÊNCIA"
     return None
 
@@ -70,9 +72,12 @@ def consolidacao():
 # MOTOR DE DECISÃO
 # =====================
 def check_strategies():
-    for strat in (zig_zag, tendencia, reversao, quebra_tendencia, consolidacao):
+    global last_strategy_used
+    # Mudamos a ordem para não priorizar sempre tendência
+    for strat in (zig_zag, reversao, quebra_tendencia, consolidacao, tendencia):
         result = strat()
-        if result:
+        if result and result[1] != last_strategy_used:
+            last_strategy_used = result[1]
             return result
     return None
 
@@ -164,4 +169,5 @@ Resultado: {result['color']}{result['value']}
     current_strategy = None
     signal_active = False
     return messages
+
 
