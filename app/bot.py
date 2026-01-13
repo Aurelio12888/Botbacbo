@@ -1,6 +1,6 @@
 import time
 from .config import POLL_INTERVAL
-from .collector import get_table_status, get_last_result
+from .collector import BantoBetCollector
 from .strategies import process_result
 from .telegram_send import send
 
@@ -13,12 +13,15 @@ def run():
 
     send("🤖 Bot iniciado com sucesso")
 
+    # Instancia o coletor
+    collector = BantoBetCollector()
+
     while True:
         try:
             # =====================
             # STATUS DA MESA
             # =====================
-            status = get_table_status()
+            status = collector.get_table_status()
 
             if status != _last_status:
                 send(
@@ -32,7 +35,7 @@ def run():
             # RESULTADOS
             # =====================
             if status == "OPEN":
-                result = get_last_result()
+                result = collector.get_last_result()
 
                 # Garante que existe resultado e que não é repetido
                 if result and result.get("id") != _last_result_id:
