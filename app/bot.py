@@ -6,21 +6,19 @@ from .telegram_send import send
 
 _last_status = None
 _last_result_id = None  # evita processar o mesmo resultado duas vezes
+_signal_sent = False    # controla se já mandou sinal nessa rodada
 
 
 def run():
-    global _last_status, _last_result_id
+    global _last_status, _last_result_id, _signal_sent
 
     send("🤖 Bot iniciado com sucesso")
 
-    # Instancia o coletor
     collector = BantoBetCollector()
 
     while True:
         try:
-            # =====================
             # STATUS DA MESA
-            # =====================
             status = collector.get_table_status()
 
             if status != _last_status:
@@ -31,24 +29,28 @@ def run():
                 )
                 _last_status = status
 
-            # =====================
+                # Reset do controle de sinal quando a rodada fecha
+                if status == "CLOSED":
+                    _signal_sent = False
+
             # RESULTADOS
-            # =====================
             if status == "OPEN":
                 result = collector.get_last_result()
 
-                # Garante que existe resultado e que não é repetido
                 if result and result.get("id") != _last_result_id:
                     messages = process_result(result) or []
-                    for msg in messages:
-                        send(msg)
 
-                    _last_result_id = result.get("id")
+                    # Só envia se houver estratégia comprovada
+                    if messages and not _signal_sent:
+                        for msg in messages:
+                            send(msg)
+
+                        _signal_sent = True  # marca que já mandou sinal nessa rodada
+                        _last_result_id = result.get("id")
 
             time.sleep(POLL_INTERVAL)
 
         except Exception as e:
-            # Nunca deixa o bot cair no Railway
             print(f"[BOT ERROR] {e}")
             time.sleep(5)
 
