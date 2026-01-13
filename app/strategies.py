@@ -8,17 +8,25 @@ current_entry = None
 current_gale = 0
 current_strategy = None
 
+STRATEGY_LABELS = {
+    "ZIG-ZAG": "🔁 ZIG-ZAG",
+    "TENDÊNCIA": "📈 TENDÊNCIA",
+    "REVERSÃO": "🔄 REVERSÃO",
+    "QUEBRA DE TENDÊNCIA": "💥 QUEBRA DE TENDÊNCIA",
+    "CONSOLIDAÇÃO": "🧱 CONSOLIDAÇÃO",
+}
 
+# =====================
+# HISTÓRICO
+# =====================
 def add_history(result):
     history.append(result["color"])
     if len(history) > 10:
         history.pop(0)
 
-
 # =====================
 # ESTRATÉGIAS
 # =====================
-
 def zig_zag():
     if len(history) < 4:
         return None
@@ -61,11 +69,9 @@ def consolidacao():
         return d, "CONSOLIDAÇÃO"
     return None
 
-
 # =====================
-# MOTOR PRINCIPAL
+# MOTOR DE DECISÃO
 # =====================
-
 def check_strategies():
     for strat in (
         zig_zag,
@@ -79,25 +85,33 @@ def check_strategies():
             return result
     return None
 
-
+# =====================
+# PROCESSAMENTO PRINCIPAL
+# =====================
 def process_result(result):
     global current_entry, current_gale, current_strategy
 
-    add_history(result)
     messages = []
+    add_history(result)
 
-    # Procurar novo sinal
+    last_sequence = " ".join(history[-5:])
+
+    # =====================
+    # NOVO SINAL
+    # =====================
     if current_entry is None:
         decision = check_strategies()
         if not decision:
-            return []
+            return messages
 
         current_entry, current_strategy = decision
         current_gale = 0
+        strategy_name = STRATEGY_LABELS.get(current_strategy, current_strategy)
 
         messages.append(
             f"""🎲 BAC BO – SINAL CONFIRMADO
-📊 Estratégia: {current_strategy}
+📊 Estratégia: {strategy_name}
+📈 Histórico: {last_sequence}
 📊 Confiança: {CONFIDENCE}%
 👉 ENTRADA: {current_entry}
 ♻️ Até {MAX_GALES} GALES
@@ -105,11 +119,16 @@ def process_result(result):
         )
         return messages
 
+    strategy_name = STRATEGY_LABELS.get(current_strategy, current_strategy)
+
+    # =====================
     # WIN
+    # =====================
     if result["color"] == current_entry:
         messages.append(
             f"""✅ WIN
-📊 Estratégia: {current_strategy}
+📊 Estratégia: {strategy_name}
+📈 Histórico: {last_sequence}
 Resultado: {result['color']}{result['value']}
 Confiança: {CONFIDENCE}%
 """
@@ -119,4 +138,33 @@ Confiança: {CONFIDENCE}%
         current_strategy = None
         return messages
 
-    #
+    # =====================
+    # GALE
+    # =====================
+    current_gale += 1
+
+    if current_gale <= MAX_GALES:
+        messages.append(
+            f"""⚠️ GALE {current_gale}
+📊 Estratégia: {strategy_name}
+📈 Histórico: {last_sequence}
+Mantém entrada: {current_entry}
+"""
+        )
+        return messages
+
+    # =====================
+    # LOSS
+    # =====================
+    messages.append(
+        f"""❌ LOSS
+📊 Estratégia: {strategy_name}
+📈 Histórico: {last_sequence}
+Resultado: {result['color']}{result['value']}
+"""
+    )
+
+    current_entry = None
+    current_gale = 0
+    current_strategy = None
+    return messages
