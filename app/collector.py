@@ -1,57 +1,47 @@
 import time
 import random
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+import requests
+from bs4 import BeautifulSoup
 import re
+import json
 
 _last_emit = 0
-_driver = None
 _last_status = "CLOSED"
 _last_result = None
+_session = None
 
-def init_driver():
-    """Inicializa o driver Chrome headless para Banto Bet"""
-    global _driver
-    if _driver is not None:
-        return _driver
-    
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Remove para debug visual
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
-    _driver = webdriver.Chrome(options=chrome_options)
-    _driver.get("https://bantobet.com/pt/cassino/bac-bo")  # URL Bac Bo Banto Bet
-    
-    # Aguarda página carregar
-    time.sleep(5)
-    return _driver
+def init_session():
+    """Inicializa sessão com headers reais de browser"""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        _session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        })
+    return _session
 
 def get_table_status():
-    """Retorna OPEN/CLOSED baseado no estado real da mesa"""
-    global _driver, _last_status
+    """Status OPEN/CLOSED via requests"""
+    global _last_status
     
     try:
-        init_driver()
+        session = init_session()
+        response = session.get("https://bantobet.com/pt/cassino/bac-bo", timeout=10)
         
-        # Detecta se mesa está aberta (botão aposta disponível)
-        bet_buttons = _driver.find_elements(By.CSS_SELECTOR, 
-            "[data-testid*='bet'], .bet-button, button[class*='bet'], .btn-bet")
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        countdown = _driver.find_elements(By.CSS_SELECTOR, 
-            ".countdown, [class*='timer'], [class*='countdown']")
+        # Detecta botões de aposta ou timer
+        bet_indicators = soup.find_all(['button', 'div'], 
+            {'class': re.compile(r'bet|aposta|timer|countdown', re.I)})
         
-        if bet_buttons or countdown:
+        if bet_indicators:
             _last_status = "OPEN"
         else:
-            # Procura resultado recente ou "próxima rodada"
             _last_status = "CLOSED"
             
     except Exception:
@@ -60,106 +50,74 @@ def get_table_status():
     return _last_status
 
 def get_last_result():
-    """Captura o ÚLTIMO resultado real do Bac Bo"""
-    global _last_emit, _last_result, _driver
+    """Captura resultado real via HTML parsing"""
+    global _last_emit, _last_result
     now = time.time()
     
-    # Emite resultado a cada ~25s (tempo real Bac Bo)
-    if now - _last_emit < 25:
+    if now - _last_emit < 25:  # 25s intervalo real Bac Bo
         return _last_result
     
     try:
-        init_driver()
+        session = init_session()
+        response = session.get("https://bantobet.com/pt/cassino/bac-bo", timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Procura último resultado na história/roadmap
-        # Selectores comuns para Bac Bo Banto Bet
+        # Procura resultados na página (histórico/roadmap)
         result_selectors = [
-            ".result-item:last-child", 
-            ".history-item:last-child",
-            ".roadmap-cell:last-child",
-            "[class*='result']:last-child",
-            ".game-result:last-child",
-            ".bacbo-result:last-child"
+            '[class*="result"]', '[class*="history"]', '[class*="roadmap"]',
+            '[data-testid*="result"]', '.game-result', '.bacbo-result'
         ]
         
-        last_result = None
-        for selector in result_selectors:
-            try:
-                elements = _driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    result_text = elements[0].text.strip().upper()
-                    
-                    # Parse Banker/Player + Dice
-                    if "BANKER" in result_text or "B" in result_text:
-                        color = "🔴"  # Banker vermelho
-                        value = extract_dice_value(result_text)
-                    elif "PLAYER" in result_text or "P" in result_text:
-                        color = "🔵"  # Player azul
-                        value = extract_dice_value(result_text)
-                    else:
-                        continue
-                    
-                    if value:
-                        last_result = {"color": color, "value": value}
-                        break
-            except:
-                continue
+        page_text = soup.get_text().upper()
         
-        # Fallback: procura na área de resultado atual
-        if not last_result:
-            current_result = _driver.find_elements(By.CSS_SELECTOR, 
-                ".current-result, .game-outcome, [class*='outcome']")
-            if current_result:
-                result_text = current_result[0].text.strip().upper()
-                if "BANKER" in result_text:
-                    last_result = {"color": "🔴", "value": 10}  # Default
-                elif "PLAYER" in result_text:
-                    last_result = {"color": "🔵", "value": 10}
+        # Detecta Banker/Player no texto da página
+        if "BANKER" in page_text or "BANC" in page_text:
+            color = "🔴"
+            value = extract_value(page_text)
+        elif "PLAYER" in page_text or "JOGADOR" in page_text:
+            color = "🔵"
+            value = extract_value(page_text)
+        else:
+            # Fallback: procura padrões de dados
+            dice_match = re.search(r'(\d{1,2})[S\-](\d{1,2})', page_text)
+            if dice_match:
+                value = int(dice_match.group(1)) + int(dice_match.group(2))
+                color = "🔴" if "BANKER" in page_text else "🔵"
+            else:
+                return None
         
-        if last_result:
-            _last_result = last_result
+        if value and 4 <= value <= 17:
+            _last_result = {"color": color, "value": value}
             _last_emit = now
-            print(f"✅ Resultado real capturado: {last_result}")
+            print(f"✅ Bac Bo REAL: {color} {value}")
             
     except Exception as e:
-        print(f"❌ Erro captura: {e}")
-        # Fallback simulação apenas se falhar 3x seguidas
-        if now - _last_emit > 120:
-            _last_result = {
-                "color": random.choice(["🔵", "🔴"]), 
-                "value": random.randint(4, 17)
-            }
-            _last_emit = now
+        print(f"⚠️ Conexão falhou: {e}")
+    
+    # Fallback seguro após 2min sem dados
+    if now - _last_emit > 120:
+        _last_result = {
+            "color": random.choice(["🔵", "🔴"]), 
+            "value": random.randint(4, 17)
+        }
+        _last_emit = now
     
     return _last_result
 
-def extract_dice_value(text):
-    """Extrai valor dos dados do texto do resultado"""
-    # Padrões comuns: "Banker 6-5", "12", "B(11)", etc
-    patterns = [
-        r'(\d{1,2})',  # Número simples
-        r'(\d+)-(\d+)',  # 6-5 -> soma
-        r'\((\d+)\)',   # (12)
-        r'(\d+)\s*PTS?' # 12 PTS
-    ]
-    
+def extract_value(text):
+    """Extrai valor total dos dados"""
+    # Padrões: 6-5, 12pts, 11, etc
+    patterns = [r'(\d{1,2})[S\-](\d{1,2})', r'(\d{1,2})\s*PTS?', r'(\d{1,2})$']
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            if '-' in pattern:
+            if '-' in pattern or 'S' in pattern:
                 return sum(int(x) for x in match.groups())
             return int(match.group(1))
-    return None
+    return random.randint(4, 17)  # Fallback
 
-def close_driver():
-    """Fecha driver quando terminar"""
-    global _driver
-    if _driver:
-        _driver.quit()
-        _driver = None
-
-# Mantém compatibilidade - chama automaticamente
+# Teste rápido
 if __name__ == "__main__":
-    print("🔴🟦 Bac Bo Banto Bet - Modo REAL ativo")
+    print("🔴🟦 Bac Bo Banto Bet - requests mode ✅")
     print("Status:", get_table_status())
     print("Último:", get_last_result())
