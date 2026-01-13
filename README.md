@@ -1,11 +1,17 @@
 
-# Bac Bo Bot FULL (96%)
+# Bac Bo Bot PRO 96%
 
-## Como usar (Railway)
-- Defina variáveis:
-  - TOKEN
-  - CHAT_ID
-- Deploy automático
+Bot de sinais Bac Bo (Bantobet)
 
-## Observação
-O coletor é um placeholder. Conecte aos dados reais da Bantobet dentro de app/collector.py.
+## Funcionalidades
+- Estratégias reais (Zig-Zag, Tendência, Reversão…)
+- Confiança fixa 96%
+- Até 2 Gales
+- WIN / LOSS automático
+- Resultado com valor real (ex: 🔵5)
+- Aviso mesa aberta / fechada
+
+## Railway
+Variáveis obrigatórias:
+TOKEN=seu_token
+CHAT_ID=id_do_grupo
